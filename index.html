@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Winter Floodlit League — Match Score Sheet</title>
+<style>
+  :root { --ink:#1f2937; --line:#9ca3af; --blue:#164e63; --paper:#fff; --soft:#f1f5f9; --muted:#64748b; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; background:#e9edf1; color:var(--ink); font:15px/1.4 Arial,Helvetica,sans-serif; }
+  .sheet { max-width:1500px; margin:auto; padding:30px; background:var(--paper); box-shadow:0 4px 22px #0001; border-radius:10px; }
+  header { text-align:center; margin-bottom:24px; }
+  h1 { font-size:22px; margin:0 0 4px; letter-spacing:.04em; }
+  .season { font-weight:700; color:#475569; }
+  .season input { display:inline-block; width:105px; padding:3px 5px; text-align:center; }
+  .details { display:grid; grid-template-columns:1fr 1fr; gap:14px 28px; margin:20px 0 22px; }
+  label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#475569; margin-bottom:5px; }
+  input, select, textarea { width:100%; min-width:0; border:1px solid #cbd5e1; border-radius:6px; padding:9px; font:inherit; background:#fff; color:var(--ink); }
+  input:focus, select:focus, textarea:focus { outline:2px solid #67a9c5; border-color:#0e7490; }
+  .grid-help { margin:0 0 9px; color:var(--muted); font-size:13px; }
+  .table-wrap { width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:6px; }
+  #scoreTable { width:100%; min-width:1120px; border-collapse:collapse; table-layout:fixed; }
+  #scoreTable th, #scoreTable td { border:1px solid var(--line); padding:7px; text-align:center; }
+  #scoreTable th { background:#eaf1f5; font-size:12px; }
+  #scoreTable th.home-heading { width:220px; min-width:220px; }
+  #scoreTable th.away-heading { min-width:210px; }
+  .pair-inputs { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+  .pair-inputs input { min-width:85px; font-size:12px; }
+  .score-cell { min-width:210px; }
+  .set-score { display:grid; grid-template-columns:repeat(2,minmax(76px,1fr)); gap:6px; }
+  .set-entry { display:grid; grid-template-columns:1fr 1fr; gap:3px; align-items:center; }
+  .set-entry label { grid-column:1 / -1; margin:0; font-size:10px; letter-spacing:0; text-align:center; }
+  .set-entry input { padding:7px 3px; text-align:center; font-weight:700; }
+  .summary { display:flex; justify-content:flex-end; margin:14px 0 24px; }
+  .totals { border-collapse:collapse; min-width:310px; width:auto; }
+  .totals th, .totals td { border:1px solid var(--line); padding:10px 16px; text-align:center; }
+  .totals th { background:#eaf1f5; font-size:12px; }
+  .totals .number { font-size:22px; font-weight:700; }
+  .reason { margin:20px 0; }
+  textarea { min-height:62px; resize:vertical; }
+  .signatures { display:grid; grid-template-columns:1fr 1fr; gap:22px 28px; margin-top:24px; }
+  .footer { margin-top:26px; border-top:1px solid #cbd5e1; padding-top:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .buttons { display:flex; flex-wrap:wrap; gap:8px; }
+  button { border:0; border-radius:6px; padding:11px 15px; font-weight:700; cursor:pointer; background:var(--blue); color:white; }
+  button.secondary { background:#e2e8f0; color:#1e293b; }
+  .auth-panel, .db-panel { border:1px solid #cbd5e1; border-radius:8px; padding:14px; margin:0 0 18px; background:#f8fafc; }
+  .auth-grid { display:grid; grid-template-columns:2fr 2fr auto auto; gap:8px; align-items:end; }
+  .db-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:10px; align-items:end; }
+  .connection-status { font-size:13px; margin-top:8px; color:#475569; }
+  .hidden { display:none !important; }
+  .note { font-size:12px; color:var(--muted); margin-top:8px; }
+  .save-status { font-size:12px; color:var(--muted); margin-top:7px; }
+  .save-status::before { content:'●'; color:#15803d; margin-right:6px; }
+  @media (max-width:700px) {
+    body { padding:0; background:#fff; }
+    .sheet { padding:15px 12px; border-radius:0; box-shadow:none; }
+    h1 { font-size:18px; }
+    .details, .signatures, .auth-grid, .db-grid { grid-template-columns:1fr; gap:12px; }
+    .details { margin:17px 0; }
+    .table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    #scoreTable { min-width:1120px; }
+    .grid-help { line-height:1.5; }
+    .summary { justify-content:stretch; }
+    .totals { min-width:0; width:100%; }
+    .totals th, .totals td { padding:8px 5px; }
+    .totals .number { font-size:19px; }
+    .footer { align-items:stretch; }
+    .footer > div:first-child { font-size:13px; }
+    .buttons { display:grid; grid-template-columns:1fr; width:100%; }
+    button { width:100%; }
+  }
+  @media print {
+    @page { size:landscape; margin:8mm; }
+    body { background:white; padding:0; }
+    .sheet { max-width:none; padding:0; box-shadow:none; border-radius:0; }
+    .buttons, .note, .save-status, .grid-help { display:none !important; }
+    input, textarea, select { border:0; border-bottom:1px solid #bbb; border-radius:0; padding:3px 1px; appearance:none; }
+    #scoreTable { min-width:0; width:100%; font-size:9px; }
+    #scoreTable th, #scoreTable td { padding:3px; }
+    #scoreTable th.home-heading { width:155px; min-width:0; }
+    #scoreTable th.away-heading { min-width:0; }
+    .pair-inputs input { min-width:0; font-size:8px; }
+    .score-cell { min-width:0; }
+    .set-score { gap:2px; }
+    .set-entry input { padding:2px 0; font-size:9px; }
+    .set-entry label { font-size:8px; }
+    th { background:#eee !important; print-color-adjust:exact; }
+  }
+</style>
+</head>
+<body>
+<main class="sheet">
+  <section class="auth-panel" id="authPanel">
+    <strong>League administrator login</strong>
+    <div class="auth-grid" id="loginFields">
+      <div><label for="loginEmail">Email</label><input id="loginEmail" type="email" autocomplete="username" placeholder="Administrator email"></div>
+      <div><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password"></div>
+      <button type="button" id="loginButton">Sign in</button>
+    </div>
+    <div class="connection-status" id="authStatus" role="status">Not signed in. Only registered league administrators can use database functions.</div>
+    <button type="button" class="secondary hidden" id="logoutButton">Sign out</button>
+  </section>
+  <section class="db-panel hidden" id="databasePanel">
+    <strong>Load a scheduled fixture</strong>
+    <div class="db-grid">
+      <div><label for="divisionSelect">Division</label><select id="divisionSelect"><option value="">Choose division</option></select></div>
+      <div><label for="fixtureSelect">Fixture</label><select id="fixtureSelect"><option value="">Choose fixture</option></select></div>
+      <button type="button" id="loadFixtureButton">Load fixture</button>
+    </div>
+    <div class="connection-status" id="dbStatus" role="status">Sign in to load fixtures and save scores.</div>
+  </section>
+  <header>
+    <h1>STOCK WINTER FLOODLIT LEAGUE</h1>
+    <div class="season">Season <input id="season" value="2026-27" aria-label="Season"></div>
+  </header>
+  <section class="details">
+    <div><label for="division">Division</label><input id="division" value="" placeholder="Selected division" readonly></div>
+    <div><label for="matchDate">Date</label><input id="matchDate" type="date"></div>
+    <div><label for="homeTeam">Home team</label><input id="homeTeam" placeholder="Home team" readonly></div>
+    <div><label for="awayTeam">Away team</label><input id="awayTeam" placeholder="Away team" readonly></div>
+  </section>
+  <p class="grid-help">Enter the two home pairs down the left and the two away pairs across the top. At each intersection, enter the home and away score for each of the two sets. On a phone, swipe the grid horizontally if needed.</p>
+  <div class="table-wrap" role="region" aria-label="Match score grid; swipe horizontally on small screens" tabindex="0">
+    <table id="scoreTable">
+      <thead id="scoreHead"></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="summary">
+    <table class="totals">
+      <tr><th>Totals</th><th>Home team</th><th>Away team</th></tr>
+      <tr><td>Sets won</td><td class="number" id="homeSets">0</td><td class="number" id="awaySets">0</td></tr>
+      <tr><td>Matches won</td><td class="number" id="homeMatches">0</td><td class="number" id="awayMatches">0</td></tr>
+    </table>
+  </div>
+  <div class="reason">
+    <label for="reason">Reason for claiming the match (if applicable)</label>
+    <textarea id="reason" placeholder="Enter reason, or leave blank"></textarea>
+  </div>
+  <section class="signatures">
+    <div><label for="claimedBy">Won / claimed by</label><input id="claimedBy" placeholder="Name / team"></div>
+    <div><label for="cardSent">Card sent in by</label><input id="cardSent" placeholder="Name"></div>
+    <div><label for="homeCaptain">Home captain</label><input id="homeCaptain" placeholder="Name"></div>
+    <div><label for="awayCaptain">Away captain</label><input id="awayCaptain" placeholder="Name"></div>
+  </section>
+  <div class="footer">
+    <div><strong>Send to:</strong> stockleagueesec@gmail.com<br><strong>BOTH Teams MUST return score sheet</strong><div id="saveStatus" class="save-status" role="status">Autosave ready</div></div>
+    <div class="buttons">
+      <button type="button" id="saveDatabaseButton" disabled>Save scores to league</button>
+      <button type="button" onclick="window.print()">Print / Save as PDF</button>
+      <button type="button" class="secondary" onclick="downloadSheet()">Download completed sheet</button>
+      <button type="button" class="secondary" onclick="clearScores()">Clear scores</button>
+    </div>
+  </div>
+  <p class="note">Database scores are saved to Supabase when you select a fixture and choose Save scores to league. Browser autosave is also available on this device. Totals update automatically. The grid has two home pairs and two away pairs. Each grid cell represents one pair-versus-pair match, with two sets per match.</p>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://tcdyfnrnghfdrozklptm.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8gX5ULLS31bC1PuXbGoQjA_99xUB8n1";
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let currentUser = null;
+let currentFixture = null;
+let fixtureTeams = null;
+const tbody = document.getElementById('rows');
+const STORAGE_KEY = 'stockWinterFloodlitScoreSheet_grid_v3';
+const pairNames = [1, 2];
+
+function pairInputs(side, pair) {
+  const sideLabel = side === 'home' ? 'Home' : 'Away';
+  return `<div class="pair-inputs">
+    <input data-field="${side}Player1_${pair}" aria-label="${sideLabel} pair ${pair} player 1" placeholder="Player 1">
+    <input data-field="${side}Player2_${pair}" aria-label="${sideLabel} pair ${pair} player 2" placeholder="Player 2">
+  </div>`;
+}
+
+document.getElementById('scoreHead').innerHTML = `<tr><th class="home-heading">Home team — pairs</th>${pairNames.map(pair => `<th class="away-heading">Away pair ${pair}<br>${pairInputs('away', pair)}<small>Set 1 and Set 2 scores (Home–Away)</small></th>`).join('')}</tr>`;
+
+for (const homePair of pairNames) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<th class="home-heading" scope="row">Home pair ${homePair}${pairInputs('home', homePair)}</th>` + pairNames.map(awayPair => `
+    <td class="score-cell">
+      <div class="set-score">
+        ${[1,2].map(set => `<div class="set-entry"><label for="score_h${homePair}_a${awayPair}_s${set}_home">Set ${set}</label><input id="score_h${homePair}_a${awayPair}_s${set}_home" type="number" min="0" max="99" step="1" data-home-pair="${homePair}" data-away-pair="${awayPair}" data-set="${set}" data-side="home" aria-label="Home pair ${homePair} versus away pair ${awayPair}, set ${set}, home score" placeholder="H"><input type="number" min="0" max="99" step="1" data-home-pair="${homePair}" data-away-pair="${awayPair}" data-set="${set}" data-side="away" aria-label="Home pair ${homePair} versus away pair ${awayPair}, set ${set}, away score" placeholder="A"></div>`).join('')}
+      </div>
+    </td>`).join('');
+  tbody.appendChild(tr);
+}
+
+function calculate() {
+  let homeSets = 0, awaySets = 0, homeMatches = 0, awayMatches = 0;
+  for (const homePair of pairNames) {
+    for (const awayPair of pairNames) {
+      let h = 0, a = 0;
+      for (const set of [1,2]) {
+        const hi = document.querySelector(`[data-home-pair="${homePair}"][data-away-pair="${awayPair}"][data-set="${set}"][data-side="home"]`);
+        const ai = document.querySelector(`[data-home-pair="${homePair}"][data-away-pair="${awayPair}"][data-set="${set}"][data-side="away"]`);
+        if (hi.value === '' || ai.value === '') continue;
+        const hv = Number(hi.value), av = Number(ai.value);
+        if (hv > av) { homeSets++; h++; }
+        else if (av > hv) { awaySets++; a++; }
+      }
+      if (h > a) homeMatches++;
+      else if (a > h) awayMatches++;
+    }
+  }
+  document.getElementById('homeSets').textContent = homeSets;
+  document.getElementById('awaySets').textContent = awaySets;
+  document.getElementById('homeMatches').textContent = homeMatches;
+  document.getElementById('awayMatches').textContent = awayMatches;
+}
+
+function saveForm() {
+  const data = {};
+  document.querySelectorAll('main.sheet input, main.sheet textarea, main.sheet select').forEach((el, i) => {
+    const key = el.id || el.dataset.field || el.getAttribute('aria-label') || `field_${i}`;
+    data[key] = el.value;
+  });
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    document.getElementById('saveStatus').textContent = 'Saved automatically';
+  } catch (err) {
+    document.getElementById('saveStatus').textContent = 'Autosave unavailable in this browser — download a copy to keep your work';
+  }
+}
+
+function restoreForm() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    document.querySelectorAll('main.sheet input, main.sheet textarea, main.sheet select').forEach((el, i) => {
+      const key = el.id || el.dataset.field || el.getAttribute('aria-label') || `field_${i}`;
+      if (Object.prototype.hasOwnProperty.call(saved, key)) el.value = saved[key];
+    });
+  } catch (err) { /* Start with a blank sheet if saved data cannot be read. */ }
+}
+
+function clearScores() {
+  if (!confirm('Clear all player names and scores? Team details and captain fields will be kept.')) return;
+  document.querySelectorAll('.score-cell input, .pair-inputs input').forEach(el => el.value = '');
+  calculate();
+  saveForm();
+}
+
+function downloadSheet() {
+  const clone = document.documentElement.cloneNode(true);
+  const originalFields = [...document.querySelectorAll('input, textarea, select')];
+  const clonedFields = [...clone.querySelectorAll('input, textarea, select')];
+  clonedFields.forEach((el, idx) => {
+    const original = originalFields[idx];
+    if (!original) return;
+    if (el.tagName === 'TEXTAREA') el.textContent = original.value;
+    else el.setAttribute('value', original.value);
+  });
+  const status = clone.querySelector('#saveStatus');
+  if (status) status.textContent = 'Downloaded copy';
+  const blob = new Blob(['<!doctype html>\n' + clone.outerHTML], {type:'text/html;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tennis-match-score-sheet.html';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+document.addEventListener('input', event => {
+  if (event.target.matches('.score-cell input')) calculate();
+  if (event.target.matches('main.sheet input, main.sheet textarea, main.sheet select')) saveForm();
+});
+document.addEventListener('change', event => {
+  if (event.target.matches('main.sheet input, main.sheet textarea, main.sheet select')) saveForm();
+});
+
+const el = id => document.getElementById(id);
+function setDbStatus(message, isError=false) { el('dbStatus').textContent = message; el('dbStatus').style.color = isError ? '#b91c1c' : '#475569'; }
+function setAuthStatus(message, isError=false) { el('authStatus').textContent = message; el('authStatus').style.color = isError ? '#b91c1c' : '#475569'; }
+async function refreshSession() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) { currentUser = null; showSignedOut(); return; }
+  currentUser = session.user;
+  const { data: admin, error } = await db.from('league_admins').select('role').eq('user_id', currentUser.id).maybeSingle();
+  if (error || !admin || !['super_admin','league_admin'].includes(admin.role)) {
+    await db.auth.signOut(); currentUser = null; showSignedOut();
+    setAuthStatus('This account is not registered as a league administrator.', true); return;
+  }
+  el('loginFields').classList.add('hidden'); el('logoutButton').classList.remove('hidden');
+  el('databasePanel').classList.remove('hidden');
+  setAuthStatus(`Signed in as ${currentUser.email} (${admin.role.replace('_',' ')}).`);
+  await loadDivisions();
+}
+function showSignedOut() {
+  el('loginFields').classList.remove('hidden'); el('logoutButton').classList.add('hidden');
+  el('databasePanel').classList.add('hidden'); el('saveDatabaseButton').disabled = true;
+}
+el('loginButton').addEventListener('click', async () => {
+  const email = el('loginEmail').value.trim(), password = el('loginPassword').value;
+  if (!email || !password) { setAuthStatus('Enter your email address and password.', true); return; }
+  el('loginButton').disabled = true; setAuthStatus('Signing in…');
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  el('loginButton').disabled = false;
+  if (error) { setAuthStatus(error.message, true); return; }
+  await refreshSession();
+});
+el('logoutButton').addEventListener('click', async () => { await db.auth.signOut(); currentUser=null; showSignedOut(); setAuthStatus('Signed out.'); });
+db.auth.onAuthStateChange((_event, session) => { if (!session) { currentUser=null; showSignedOut(); } });
+async function loadDivisions() {
+  const { data, error } = await db.from('divisions').select('id,category,name,sort_order').order('sort_order').order('name');
+  if (error) { setDbStatus('Could not load divisions: ' + error.message, true); return; }
+  const select = el('divisionSelect'); select.innerHTML = '<option value="">Choose division</option>';
+  (data || []).forEach(d => { const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.category} – ${d.name}`; select.appendChild(o); });
+  setDbStatus(`${data.length} divisions loaded. Choose a division to see its fixtures.`);
+}
+el('divisionSelect').addEventListener('change', async () => {
+  const divisionId = el('divisionSelect').value; const fs=el('fixtureSelect'); fs.innerHTML='<option value="">Choose fixture</option>';
+  currentFixture=null; el('saveDatabaseButton').disabled=true;
+  if (!divisionId) return;
+  const { data: fixtures, error } = await db.from('fixtures').select('id,match_date,status,home_team_id,away_team_id').eq('division_id',divisionId).order('match_date');
+  if (error) { setDbStatus('Could not load fixtures: '+error.message,true); return; }
+  const ids=[...new Set((fixtures||[]).flatMap(f=>[f.home_team_id,f.away_team_id]))];
+  let teams=[];
+  if (ids.length) { const result=await db.from('teams').select('id,name').in('id',ids); if(result.error){setDbStatus('Could not load team names: '+result.error.message,true);return;} teams=result.data||[]; }
+  const tm=new Map(teams.map(t=>[t.id,t.name]));
+  (fixtures||[]).forEach(f=>{ const o=document.createElement('option'); o.value=f.id; const date=f.match_date?new Date(f.match_date).toLocaleDateString('en-GB'):'Date TBC'; o.textContent=`${date} — ${tm.get(f.home_team_id)||'Home'} v ${tm.get(f.away_team_id)||'Away'}`; fs.appendChild(o); });
+  fs.dataset.fixtures=JSON.stringify((fixtures||[]).map(f=>({...f,home_name:tm.get(f.home_team_id)||'',away_name:tm.get(f.away_team_id)||''})));
+  setDbStatus(`${fixtures.length} fixtures found.`);
+});
+el('loadFixtureButton').addEventListener('click', async () => {
+  const id=el('fixtureSelect').value; if(!id){setDbStatus('Choose a fixture first.',true);return;}
+  const fixtures=JSON.parse(el('fixtureSelect').dataset.fixtures||'[]'); currentFixture=fixtures.find(f=>f.id===id);
+  if(!currentFixture){setDbStatus('Fixture details could not be found.',true);return;}
+  fixtureTeams={home:currentFixture.home_team_id,away:currentFixture.away_team_id};
+  el('division').value=el('divisionSelect').selectedOptions[0].textContent;
+  el('homeTeam').value=currentFixture.home_name; el('awayTeam').value=currentFixture.away_name;
+  if(currentFixture.match_date) el('matchDate').value=new Date(currentFixture.match_date).toISOString().slice(0,10);
+  document.querySelectorAll('.pair-inputs input,.score-cell input').forEach(i=>i.value='');
+  const {data:pairs,error}=await db.from('pair_matches').select('id,pair_number,home_player1_id,home_player2_id,away_player1_id,away_player2_id').eq('fixture_id',id).order('pair_number');
+  if(error){setDbStatus('Could not load saved pair matches: '+error.message,true);return;}
+  const playerIds=[...new Set((pairs||[]).flatMap(p=>[p.home_player1_id,p.home_player2_id,p.away_player1_id,p.away_player2_id]).filter(Boolean))];
+  let players=[]; if(playerIds.length){const r=await db.from('players').select('id,name').in('id',playerIds);if(r.error){setDbStatus('Could not load players: '+r.error.message,true);return;}players=r.data||[];}
+  const names=new Map(players.map(p=>[p.id,p.name])); const pairByNumber=new Map((pairs||[]).map(p=>[p.pair_number,p]));
+  for(const side of ['home','away']) for(const n of [1,2]){
+    const pair=pairByNumber.get(n); if(!pair) continue;
+    const ids=side==='home'?[pair.home_player1_id,pair.home_player2_id]:[pair.away_player1_id,pair.away_player2_id];
+    ids.forEach((pid,i)=>{const input=document.querySelector(`[data-field="${side}Player${i+1}_${n}"]`);if(input)input.value=names.get(pid)||'';});
+  }
+  const pairIds=(pairs||[]).map(p=>p.id); if(pairIds.length){const r=await db.from('match_sets').select('pair_match_id,set_number,home_score,away_score').in('pair_match_id',pairIds);if(r.error){setDbStatus('Could not load saved set scores: '+r.error.message,true);return;}
+    const idToNo=new Map((pairs||[]).map(p=>[p.id,p.pair_number]));
+    (r.data||[]).forEach(s=>{const n=idToNo.get(s.pair_match_id);const homePair=n; /* each pair row is mapped to one score cell below */
+      // pair_number represents the home-pair/away-pair cell index: 1..4
+      const hp=Math.ceil(n/2), ap=((n-1)%2)+1;
+      const hi=document.querySelector(`[data-home-pair="${hp}"][data-away-pair="${ap}"][data-set="${s.set_number}"][data-side="home"]`);
+      const ai=document.querySelector(`[data-home-pair="${hp}"][data-away-pair="${ap}"][data-set="${s.set_number}"][data-side="away"]`);
+      if(hi)hi.value=s.home_score;if(ai)ai.value=s.away_score;
+    });
+  }
+  calculate(); saveForm(); el('saveDatabaseButton').disabled=false; setDbStatus('Fixture loaded. Enter or check the players and scores, then save to the league.');
+});
+async function getOrCreatePlayer(name, teamId) {
+  const clean=name.trim(); if(!clean) return null;
+  let {data,error}=await db.from('players').select('id').ilike('name',clean).limit(1).maybeSingle();
+  if(error) throw error;
+  if(!data){const r=await db.from('players').insert({name:clean}).select('id').single();if(r.error)throw r.error;data=r.data;}
+  const link=await db.from('team_players').upsert({team_id:teamId,player_id:data.id},{onConflict:'team_id,player_id'});
+  if(link.error)throw link.error;
+  return data.id;
+}
+async function saveScoresToDatabase() {
+  if(!currentUser || !currentFixture || !fixtureTeams){setDbStatus('Sign in and load a fixture first.',true);return;}
+  const button=el('saveDatabaseButton');button.disabled=true;setDbStatus('Saving players and scores…');
+  try {
+    // Resolve player IDs for each of the four pair-v-pair cells. Pair number is 1..4 (home pair rows, away pair columns).
+    for(const hp of [1,2]) for(const ap of [1,2]) {
+      const pairNumber=(hp-1)*2+ap;
+      const names={home1:document.querySelector(`[data-field="homePlayer1_${hp}"]`).value,home2:document.querySelector(`[data-field="homePlayer2_${hp}"]`).value,away1:document.querySelector(`[data-field="awayPlayer1_${ap}"]`).value,away2:document.querySelector(`[data-field="awayPlayer2_${ap}"]`).value};
+      const h1=await getOrCreatePlayer(names.home1,fixtureTeams.home), h2=await getOrCreatePlayer(names.home2,fixtureTeams.home);
+      const a1=await getOrCreatePlayer(names.away1,fixtureTeams.away), a2=await getOrCreatePlayer(names.away2,fixtureTeams.away);
+      const payload={fixture_id:currentFixture.id,pair_number:pairNumber,home_player1_id:h1,home_player2_id:h2,away_player1_id:a1,away_player2_id:a2};
+      const {data:pair,error}=await db.from('pair_matches').upsert(payload,{onConflict:'fixture_id,pair_number'}).select('id').single();
+      if(error)throw error;
+      const sets=[];
+      for(const setNo of [1,2]){
+        const hi=document.querySelector(`[data-home-pair="${hp}"][data-away-pair="${ap}"][data-set="${setNo}"][data-side="home"]`);
+        const ai=document.querySelector(`[data-home-pair="${hp}"][data-away-pair="${ap}"][data-set="${setNo}"][data-side="away"]`);
+        if(hi.value!=='' && ai.value!=='') sets.push({pair_match_id:pair.id,set_number:setNo,home_score:Number(hi.value),away_score:Number(ai.value)});
+      }
+      const del=await db.from('match_sets').delete().eq('pair_match_id',pair.id);if(del.error)throw del.error;
+      if(sets.length){const ins=await db.from('match_sets').insert(sets);if(ins.error)throw ins.error;}
+    }
+    setDbStatus('Scores saved successfully to Supabase.');el('saveStatus').textContent='Saved to league database';
+  } catch(err) { setDbStatus('Save failed: '+(err.message||String(err)),true); }
+  finally {button.disabled=false;}
+}
+el('saveDatabaseButton').addEventListener('click',saveScoresToDatabase);
+
+restoreForm();
+if (!document.getElementById('matchDate').value) {
+  const today = new Date();
+  document.getElementById('matchDate').value = new Date(today.getTime() - today.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+calculate();
+refreshSession().catch(err => setAuthStatus("Connection error: "+err.message,true));
+</script>
+</body>
+</html>
