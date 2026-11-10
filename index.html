@@ -97,6 +97,18 @@
       <div><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password"></div>
       <button type="button" id="loginButton">Sign in</button>
     </div>
+    <div class="buttons" id="authActions" style="margin-top:8px">
+      <button type="button" class="secondary" id="forgotPasswordButton">Forgot password?</button>
+    </div>
+    <section id="recoveryPanel" class="hidden" style="margin-top:14px">
+      <strong>Choose a new password</strong>
+      <p class="note">Your recovery link has been accepted. Enter and confirm your new password below.</p>
+      <div class="auth-grid" style="margin-top:10px">
+        <div><label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters"></div>
+        <div><label for="confirmPassword">Confirm new password</label><input id="confirmPassword" type="password" autocomplete="new-password" minlength="8" placeholder="Enter it again"></div>
+        <button type="button" id="updatePasswordButton">Update password</button>
+      </div>
+    </section>
     <div class="connection-status" id="authStatus" role="status">Not signed in. Only registered league administrators can use database functions.</div>
     <button type="button" class="secondary hidden" id="logoutButton">Sign out</button>
   </section>
@@ -157,7 +169,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SUPABASE_URL = "https://tcdyfnrnghfdrozklptm.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8gX5ULLS31bC1PuXbGoQjA_99xUB8n1";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_8gX5ULLS31bC1PuXbGoQjA_99xUB8n1"; // Publishable key: safe for browser use with RLS enabled.
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 let currentUser = null;
 let currentFixture = null;
@@ -282,7 +294,7 @@ async function refreshSession() {
     await db.auth.signOut(); currentUser = null; showSignedOut();
     setAuthStatus('This account is not registered as a league administrator.', true); return;
   }
-  el('loginFields').classList.add('hidden'); el('logoutButton').classList.remove('hidden');
+  el('loginFields').classList.add('hidden'); el('authActions').classList.add('hidden'); el('recoveryPanel').classList.add('hidden'); el('logoutButton').classList.remove('hidden');
   el('databasePanel').classList.remove('hidden');
   setAuthStatus(`Signed in as ${currentUser.email} (${admin.role.replace('_',' ')}).`);
   await loadDivisions();
@@ -300,8 +312,47 @@ el('loginButton').addEventListener('click', async () => {
   if (error) { setAuthStatus(error.message, true); return; }
   await refreshSession();
 });
+el('forgotPasswordButton').addEventListener('click', async () => {
+  const email = el('loginEmail').value.trim();
+  if (!email) { setAuthStatus('Enter your administrator email address first.', true); el('loginEmail').focus(); return; }
+  el('forgotPasswordButton').disabled = true;
+  setAuthStatus('Sending password recovery email…');
+  const redirectTo = window.location.origin + window.location.pathname;
+  const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo });
+  el('forgotPasswordButton').disabled = false;
+  if (error) { setAuthStatus('Could not send recovery email: ' + error.message, true); return; }
+  setAuthStatus('Password recovery email sent. Open the latest email and follow its link to this website.');
+});
+el('updatePasswordButton').addEventListener('click', async () => {
+  const password = el('newPassword').value;
+  const confirm = el('confirmPassword').value;
+  if (password.length < 8) { setAuthStatus('Use a password of at least 8 characters.', true); return; }
+  if (password !== confirm) { setAuthStatus('The passwords do not match.', true); return; }
+  el('updatePasswordButton').disabled = true;
+  setAuthStatus('Updating password…');
+  const { error } = await db.auth.updateUser({ password });
+  el('updatePasswordButton').disabled = false;
+  if (error) { setAuthStatus('Password update failed: ' + error.message, true); return; }
+  el('recoveryPanel').classList.add('hidden');
+  el('loginFields').classList.remove('hidden');
+  el('loginPassword').value = '';
+  el('newPassword').value = '';
+  el('confirmPassword').value = '';
+  setAuthStatus('Your password has been changed. You are now signed in if your administrator account is valid.');
+  await refreshSession();
+});
 el('logoutButton').addEventListener('click', async () => { await db.auth.signOut(); currentUser=null; showSignedOut(); setAuthStatus('Signed out.'); });
-db.auth.onAuthStateChange((_event, session) => { if (!session) { currentUser=null; showSignedOut(); } });
+db.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'PASSWORD_RECOVERY') {
+    el('loginFields').classList.add('hidden');
+    el('authActions').classList.add('hidden');
+    el('recoveryPanel').classList.remove('hidden');
+    el('databasePanel').classList.add('hidden');
+    setAuthStatus('Recovery link accepted. Choose a new password.');
+    return;
+  }
+  if (!session) { currentUser=null; showSignedOut(); }
+});
 async function loadDivisions() {
   const { data, error } = await db.from('divisions').select('id,category,name,sort_order').order('sort_order').order('name');
   if (error) { setDbStatus('Could not load divisions: ' + error.message, true); return; }
@@ -397,7 +448,11 @@ if (!document.getElementById('matchDate').value) {
   document.getElementById('matchDate').value = new Date(today.getTime() - today.getTimezoneOffset()*60000).toISOString().slice(0,10);
 }
 calculate();
-refreshSession().catch(err => setAuthStatus("Connection error: "+err.message,true));
+// Supabase processes the recovery token in the URL hash and emits PASSWORD_RECOVERY.
+// Avoid forcing the normal login view while a recovery link is being handled.
+if (!window.location.hash.includes('type=recovery')) {
+  refreshSession().catch(err => setAuthStatus("Connection error: "+err.message,true));
+}
 </script>
 </body>
 </html>
