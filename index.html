@@ -69,6 +69,19 @@
     .buttons { display:grid; grid-template-columns:1fr; width:100%; }
     button { width:100%; }
   }
+
+  .admin-panel { border:1px solid #cbd5e1; border-radius:8px; padding:16px; margin:0 0 20px; background:#f8fafc; }
+  .admin-panel h2 { margin:0 0 12px; font-size:19px; }
+  .admin-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 16px; }
+  .admin-tabs button[aria-selected="true"] { background:#0e7490; }
+  .admin-form { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-items:end; margin:12px 0; }
+  .admin-list { width:100%; border-collapse:collapse; margin-top:12px; background:white; }
+  .admin-list th,.admin-list td { border:1px solid #cbd5e1; padding:8px; text-align:left; }
+  .admin-list th { background:#eaf1f5; }
+  .admin-list button { padding:7px 10px; }
+  .admin-message { margin:8px 0; font-size:13px; color:#475569; }
+  @media(max-width:700px){ .admin-form{grid-template-columns:1fr;} .admin-list{font-size:13px;} }
+
   @media print {
     @page { size:landscape; margin:8mm; }
     body { background:white; padding:0; }
@@ -120,6 +133,60 @@
       <button type="button" id="loadFixtureButton">Load fixture</button>
     </div>
     <div class="connection-status" id="dbStatus" role="status">Sign in to load fixtures and save scores.</div>
+  </section>
+
+  <section class="admin-panel hidden" id="adminPanel">
+    <h2>League administration</h2>
+    <p class="note">Use these tools to maintain teams, players and fixtures. Changes are saved directly to the league database.</p>
+    <nav class="admin-tabs" aria-label="Administration sections">
+      <button type="button" data-admin-tab="teams" aria-selected="true">Teams</button>
+      <button type="button" data-admin-tab="players" aria-selected="false">Players</button>
+      <button type="button" data-admin-tab="fixtures" aria-selected="false">Fixtures</button>
+      <button type="button" data-admin-tab="admins" id="adminsTab" aria-selected="false" class="hidden">Administrators</button>
+    </nav>
+    <section data-admin-section="teams">
+      <h3>Manage teams</h3>
+      <div class="admin-form">
+        <div><label for="teamDivision">Division</label><select id="teamDivision"><option value="">Choose division</option></select></div>
+        <div><label for="teamName">Team name</label><input id="teamName" placeholder="Enter team name"></div>
+        <button type="button" id="addTeamButton">Add team</button>
+      </div>
+      <div id="teamsMessage" class="admin-message" role="status"></div>
+      <div id="teamsList"></div>
+    </section>
+    <section data-admin-section="players" class="hidden">
+      <h3>Manage players</h3>
+      <div class="admin-form">
+        <div><label for="playerTeam">Team</label><select id="playerTeam"><option value="">Choose team</option></select></div>
+        <div><label for="playerName">Player name</label><input id="playerName" placeholder="Enter player name"></div>
+        <button type="button" id="addPlayerButton">Add player to team</button>
+      </div>
+      <div id="playersMessage" class="admin-message" role="status"></div>
+      <div id="playersList"></div>
+    </section>
+    <section data-admin-section="fixtures" class="hidden">
+      <h3>Manage fixtures</h3>
+      <div class="admin-form">
+        <div><label for="fixtureDivision">Division</label><select id="fixtureDivision"><option value="">Choose division</option></select></div>
+        <div><label for="fixtureHome">Home team</label><select id="fixtureHome"><option value="">Choose home team</option></select></div>
+        <div><label for="fixtureAway">Away team</label><select id="fixtureAway"><option value="">Choose away team</option></select></div>
+        <div><label for="fixtureDate">Match date</label><input id="fixtureDate" type="date"></div>
+        <button type="button" id="addFixtureButton">Create fixture</button>
+      </div>
+      <div id="fixturesMessage" class="admin-message" role="status"></div>
+      <div id="fixturesList"></div>
+    </section>
+    <section data-admin-section="admins" class="hidden">
+      <h3>Manage administrators</h3>
+      <p class="note">Add an existing Supabase Auth user's UUID. The person must already have registered or signed in at least once. League admins have the same league-management permissions; super admins can manage administrators.</p>
+      <div class="admin-form">
+        <div><label for="adminUserId">User UUID</label><input id="adminUserId" placeholder="Supabase Auth user UUID"></div>
+        <div><label for="adminRole">Role</label><select id="adminRole"><option value="league_admin">League admin</option><option value="super_admin">Super admin</option></select></div>
+        <button type="button" id="addAdminButton">Add administrator</button>
+      </div>
+      <div id="adminsMessage" class="admin-message" role="status"></div>
+      <div id="adminsList"></div>
+    </section>
   </section>
   <header>
     <h1>STOCK WINTER FLOODLIT LEAGUE</h1>
@@ -296,12 +363,14 @@ async function refreshSession() {
   }
   el('loginFields').classList.add('hidden'); el('authActions').classList.add('hidden'); el('recoveryPanel').classList.add('hidden'); el('logoutButton').classList.remove('hidden');
   el('databasePanel').classList.remove('hidden');
+  el('adminPanel').classList.remove('hidden');
+  el('adminsTab').classList.toggle('hidden', admin.role !== 'super_admin');
   setAuthStatus(`Signed in as ${currentUser.email} (${admin.role.replace('_',' ')}).`);
   await loadDivisions();
 }
 function showSignedOut() {
   el('loginFields').classList.remove('hidden'); el('logoutButton').classList.add('hidden');
-  el('databasePanel').classList.add('hidden'); el('saveDatabaseButton').disabled = true;
+  el('databasePanel').classList.add('hidden'); el('adminPanel').classList.add('hidden'); el('saveDatabaseButton').disabled = true;
 }
 el('loginButton').addEventListener('click', async () => {
   const email = el('loginEmail').value.trim(), password = el('loginPassword').value;
@@ -358,6 +427,8 @@ async function loadDivisions() {
   if (error) { setDbStatus('Could not load divisions: ' + error.message, true); return; }
   const select = el('divisionSelect'); select.innerHTML = '<option value="">Choose division</option>';
   (data || []).forEach(d => { const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.category} – ${d.name}`; select.appendChild(o); });
+  ['teamDivision','fixtureDivision'].forEach(id=>{const target=el(id);target.innerHTML='<option value="">Choose division</option>';(data||[]).forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=`${d.category} – ${d.name}`;target.appendChild(o);});});
+  await refreshTeams();
   setDbStatus(`${data.length} divisions loaded. Choose a division to see its fixtures.`);
 }
 el('divisionSelect').addEventListener('change', async () => {
@@ -441,6 +512,41 @@ async function saveScoresToDatabase() {
   finally {button.disabled=false;}
 }
 el('saveDatabaseButton').addEventListener('click',saveScoresToDatabase);
+
+
+// Administration tools: all writes are protected by the database RLS policies.
+function adminMsg(id,msg,isError=false){const n=el(id);n.textContent=msg;n.style.color=isError?'#b91c1c':'#475569';}
+function safeText(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function renderTable(headers,rows){if(!rows.length)return '<p class="note">Nothing to display yet.</p>';return `<div style="overflow-x:auto"><table class="admin-list"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;}
+async function refreshTeams(){
+ const {data,error}=await db.from('teams').select('id,division_id,name').order('name');
+ if(error){adminMsg('teamsMessage','Could not load teams: '+error.message,true);return;}
+ window.leagueTeams=data||[];
+ const divs=[...el('teamDivision').options].filter(o=>o.value); const names=new Map(divs.map(o=>[o.value,o.textContent]));
+ const divId=el('teamDivision').value;
+ const shown=(data||[]).filter(t=>!divId||t.division_id===divId);
+ el('teamsList').innerHTML=renderTable(['Division','Team','Action'],shown.map(t=>`<tr><td>${safeText(names.get(t.division_id)||'')}</td><td>${safeText(t.name)}</td><td><button type="button" class="secondary" data-delete-team="${t.id}">Delete</button></td></tr>`));
+ const playerTeam=el('playerTeam'), old=playerTeam.value;playerTeam.innerHTML='<option value="">Choose team</option>';
+ (data||[]).forEach(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=`${names.get(t.division_id)||'Division'} — ${t.name}`;playerTeam.appendChild(o);});if((data||[]).some(t=>t.id===old))playerTeam.value=old;
+ await refreshFixtureTeamOptions();
+}
+el('teamDivision').addEventListener('change',refreshTeams);
+el('addTeamButton').addEventListener('click',async()=>{const division_id=el('teamDivision').value,name=el('teamName').value.trim();if(!division_id||!name){adminMsg('teamsMessage','Choose a division and enter a team name.',true);return;}const {error}=await db.from('teams').insert({division_id,name});if(error){adminMsg('teamsMessage','Could not add team: '+error.message,true);return;}el('teamName').value='';adminMsg('teamsMessage','Team added.');await refreshTeams();});
+el('teamsList').addEventListener('click',async e=>{const b=e.target.closest('[data-delete-team]');if(!b)return;const team=window.leagueTeams.find(t=>t.id===b.dataset.deleteTeam);if(!team)return;if(!confirm(`Delete ${team.name}? This may be blocked if the team has players or fixtures.`))return;const {error}=await db.from('teams').delete().eq('id',team.id);if(error){adminMsg('teamsMessage','Could not delete team: '+error.message,true);return;}adminMsg('teamsMessage','Team deleted.');await refreshTeams();});
+async function refreshPlayers(){const teamId=el('playerTeam').value;if(!teamId){el('playersList').innerHTML='<p class="note">Choose a team to view its players.</p>';return;}const {data,error}=await db.from('team_players').select('player_id,players(id,name)').eq('team_id',teamId);if(error){adminMsg('playersMessage','Could not load players: '+error.message,true);return;}const rows=(data||[]).map(x=>`<tr><td>${safeText(x.players?.name||'Unknown')}</td><td><button type="button" class="secondary" data-remove-player="${x.player_id}">Remove from team</button></td></tr>`);el('playersList').innerHTML=renderTable(['Player','Action'],rows);}
+el('playerTeam').addEventListener('change',refreshPlayers);
+el('addPlayerButton').addEventListener('click',async()=>{const team_id=el('playerTeam').value,name=el('playerName').value.trim();if(!team_id||!name){adminMsg('playersMessage','Choose a team and enter a player name.',true);return;}let {data:player,error}=await db.from('players').select('id').ilike('name',name).limit(1).maybeSingle();if(error){adminMsg('playersMessage',error.message,true);return;}if(!player){const r=await db.from('players').insert({name}).select('id').single();if(r.error){adminMsg('playersMessage','Could not create player: '+r.error.message,true);return;}player=r.data;}const link=await db.from('team_players').upsert({team_id,player_id:player.id},{onConflict:'team_id,player_id'});if(link.error){adminMsg('playersMessage','Could not assign player: '+link.error.message,true);return;}el('playerName').value='';adminMsg('playersMessage','Player added to team.');await refreshPlayers();});
+el('playersList').addEventListener('click',async e=>{const b=e.target.closest('[data-remove-player]');if(!b)return;if(!confirm('Remove this player from the selected team?'))return;const {error}=await db.from('team_players').delete().eq('team_id',el('playerTeam').value).eq('player_id',b.dataset.removePlayer);if(error){adminMsg('playersMessage',error.message,true);return;}adminMsg('playersMessage','Player removed from team.');await refreshPlayers();});
+async function refreshFixtureTeamOptions(){const divisionId=el('fixtureDivision').value;const home=el('fixtureHome'),away=el('fixtureAway');const oldH=home.value,oldA=away.value;home.innerHTML='<option value="">Choose home team</option>';away.innerHTML='<option value="">Choose away team</option>';if(!divisionId)return;const {data,error}=await db.from('teams').select('id,name').eq('division_id',divisionId).order('name');if(error){adminMsg('fixturesMessage','Could not load teams: '+error.message,true);return;}(data||[]).forEach(t=>{for(const sel of [home,away]){const o=document.createElement('option');o.value=t.id;o.textContent=t.name;sel.appendChild(o);}});if((data||[]).some(t=>t.id===oldH))home.value=oldH;if((data||[]).some(t=>t.id===oldA))away.value=oldA;await refreshFixtures();}
+el('fixtureDivision').addEventListener('change',refreshFixtureTeamOptions);
+async function refreshFixtures(){const divisionId=el('fixtureDivision').value;if(!divisionId){el('fixturesList').innerHTML='<p class="note">Choose a division to view its fixtures.</p>';return;}const {data,error}=await db.from('fixtures').select('id,match_date,status,home_team_id,away_team_id').eq('division_id',divisionId).order('match_date');if(error){adminMsg('fixturesMessage','Could not load fixtures: '+error.message,true);return;}const ids=[...new Set((data||[]).flatMap(f=>[f.home_team_id,f.away_team_id]))];let teams=[];if(ids.length){const r=await db.from('teams').select('id,name').in('id',ids);if(r.error){adminMsg('fixturesMessage',r.error.message,true);return;}teams=r.data||[];}const names=new Map(teams.map(t=>[t.id,t.name]));el('fixturesList').innerHTML=renderTable(['Date','Fixture','Status','Action'],(data||[]).map(f=>`<tr><td>${f.match_date?new Date(f.match_date+'T00:00:00').toLocaleDateString('en-GB'):'TBC'}</td><td>${safeText(names.get(f.home_team_id)||'Home')} v ${safeText(names.get(f.away_team_id)||'Away')}</td><td>${safeText(f.status||'scheduled')}</td><td><button type="button" class="secondary" data-delete-fixture="${f.id}">Delete</button></td></tr>`));}
+el('addFixtureButton').addEventListener('click',async()=>{const division_id=el('fixtureDivision').value,home_team_id=el('fixtureHome').value,away_team_id=el('fixtureAway').value,match_date=el('fixtureDate').value;if(!division_id||!home_team_id||!away_team_id){adminMsg('fixturesMessage','Choose a division, home team and away team.',true);return;}if(home_team_id===away_team_id){adminMsg('fixturesMessage','Home and away teams must be different.',true);return;}const {error}=await db.from('fixtures').insert({division_id,home_team_id,away_team_id,match_date:match_date||null,status:'scheduled'});if(error){adminMsg('fixturesMessage','Could not create fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture created.');await refreshFixtures();});
+el('fixturesList').addEventListener('click',async e=>{const b=e.target.closest('[data-delete-fixture]');if(!b)return;if(!confirm('Delete this fixture and its associated score records? If related records prevent deletion, remove them first.'))return;const {error}=await db.from('fixtures').delete().eq('id',b.dataset.deleteFixture);if(error){adminMsg('fixturesMessage','Could not delete fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture deleted.');await refreshFixtures();});
+// A super admin can grant/revoke admin roles using an existing Auth user UUID.
+async function refreshAdmins(){const {data,error}=await db.from('league_admins').select('user_id,role,created_at').order('created_at');if(error){adminMsg('adminsMessage','Could not load administrators: '+error.message,true);return;}el('adminsList').innerHTML=renderTable(['User UUID','Role','Action'],(data||[]).map(a=>`<tr><td style="word-break:break-all">${safeText(a.user_id)}</td><td>${safeText(a.role)}</td><td><button type="button" class="secondary" data-remove-admin="${a.user_id}">Remove</button></td></tr>`));}
+el('addAdminButton').addEventListener('click',async()=>{const user_id=el('adminUserId').value.trim(),role=el('adminRole').value;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id)){adminMsg('adminsMessage','Enter a valid Supabase Auth user UUID.',true);return;}const {error}=await db.from('league_admins').upsert({user_id,role},{onConflict:'user_id'});if(error){adminMsg('adminsMessage','Could not add administrator: '+error.message,true);return;}el('adminUserId').value='';adminMsg('adminsMessage','Administrator role saved.');await refreshAdmins();});
+el('adminsList').addEventListener('click',async e=>{const b=e.target.closest('[data-remove-admin]');if(!b)return;if(b.dataset.removeAdmin===currentUser.id){adminMsg('adminsMessage','You cannot remove your own administrator access here.',true);return;}if(!confirm('Remove this administrator?'))return;const {error}=await db.from('league_admins').delete().eq('user_id',b.dataset.removeAdmin);if(error){adminMsg('adminsMessage',error.message,true);return;}adminMsg('adminsMessage','Administrator removed.');await refreshAdmins();});
+document.querySelectorAll('[data-admin-tab]').forEach(button=>button.addEventListener('click',async()=>{const tab=button.dataset.adminTab;document.querySelectorAll('[data-admin-tab]').forEach(b=>b.setAttribute('aria-selected',String(b===button)));document.querySelectorAll('[data-admin-section]').forEach(section=>section.classList.toggle('hidden',section.dataset.adminSection!==tab));if(tab==='players')await refreshPlayers();if(tab==='fixtures')await refreshFixtureTeamOptions();if(tab==='admins')await refreshAdmins();}));
 
 restoreForm();
 if (!document.getElementById('matchDate').value) {
