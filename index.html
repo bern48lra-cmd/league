@@ -250,8 +250,8 @@ const pairNames = [1, 2];
 function pairInputs(side, pair) {
   const sideLabel = side === 'home' ? 'Home' : 'Away';
   return `<div class="pair-inputs">
-    <input data-field="${side}Player1_${pair}" aria-label="${sideLabel} pair ${pair} player 1" placeholder="Player 1">
-    <input data-field="${side}Player2_${pair}" aria-label="${sideLabel} pair ${pair} player 2" placeholder="Player 2">
+    <select data-field="${side}Player1_${pair}" aria-label="${sideLabel} pair ${pair} player 1"><option value="">Select player 1</option></select>
+    <select data-field="${side}Player2_${pair}" aria-label="${sideLabel} pair ${pair} player 2"><option value="">Select player 2</option></select>
   </div>`;
 }
 
@@ -490,12 +490,37 @@ el('loadFixtureButton').addEventListener('click', async () => {
   if(error){setDbStatus('Could not load saved pair matches: '+error.message,true);return;}
   const playerIds=[...new Set((pairs||[]).flatMap(p=>[p.home_player1_id,p.home_player2_id,p.away_player1_id,p.away_player2_id]).filter(Boolean))];
   let players=[]; if(playerIds.length){const r=await db.from('players').select('id,name').in('id',playerIds);if(r.error){setDbStatus('Could not load players: '+r.error.message,true);return;}players=r.data||[];}
-  const names=new Map(players.map(p=>[p.id,p.name])); const pairByNumber=new Map((pairs||[]).map(p=>[p.pair_number,p]));
-  for(const side of ['home','away']) for(const n of [1,2]){
-    const pair=pairByNumber.get(n); if(!pair) continue;
-    const ids=side==='home'?[pair.home_player1_id,pair.home_player2_id]:[pair.away_player1_id,pair.away_player2_id];
-    ids.forEach((pid,i)=>{const input=document.querySelector(`[data-field="${side}Player${i+1}_${n}"]`);if(input)input.value=names.get(pid)||'';});
+  const names=new Map(players.map(p=>[p.id,p.name]));
+  // Populate each pair's player dropdown from the selected fixture's home/away team roster.
+  async function rosterForTeam(teamId) {
+    const links=await db.from('team_players').select('player_id').eq('team_id',teamId);
+    if(links.error) throw links.error;
+    const ids=[...new Set((links.data||[]).map(x=>x.player_id))];
+    if(!ids.length) return [];
+    const roster=await db.from('players').select('id,name').in('id',ids).order('name');
+    if(roster.error) throw roster.error;
+    return roster.data||[];
   }
+  try {
+    const [homeRoster,awayRoster]=await Promise.all([rosterForTeam(fixtureTeams.home),rosterForTeam(fixtureTeams.away)]);
+    for(const side of ['home','away']) for(const n of [1,2]) {
+      const roster=side==='home'?homeRoster:awayRoster;
+      for(let i=1;i<=2;i++) {
+        const select=document.querySelector(`[data-field="${side}Player${i}_${n}"]`);
+        if(!select) continue;
+        const sourcePairNumber=side==='home' ? ((n-1)*2+1) : n;
+        const savedPair=(pairs||[]).find(p=>p.pair_number===sourcePairNumber);
+        const savedId=savedPair ? (side==='home'?(i===1?savedPair.home_player1_id:savedPair.home_player2_id):(i===1?savedPair.away_player1_id:savedPair.away_player2_id)) : null;
+        const savedName=names.get(savedId)||'';
+        select.innerHTML=`<option value="">Select player ${i}</option>`;
+        const rosterNames=new Set(roster.map(x=>x.name));
+        // Keep a previously saved player visible even if their team membership was later changed.
+        if(savedName && !rosterNames.has(savedName)) roster.push({name:savedName});
+        roster.forEach(player=>{const option=document.createElement('option');option.value=player.name;option.textContent=player.name;select.appendChild(option);});
+        if(savedName) select.value=savedName;
+      }
+    }
+  } catch(rosterError) { setDbStatus('Could not load team player lists: '+rosterError.message,true); return; }
   const pairIds=(pairs||[]).map(p=>p.id); if(pairIds.length){const r=await db.from('match_sets').select('pair_match_id,set_number,home_score,away_score').in('pair_match_id',pairIds);if(r.error){setDbStatus('Could not load saved set scores: '+r.error.message,true);return;}
     const idToNo=new Map((pairs||[]).map(p=>[p.id,p.pair_number]));
     (r.data||[]).forEach(s=>{const n=idToNo.get(s.pair_match_id);const homePair=n; /* each pair row is mapped to one score cell below */
