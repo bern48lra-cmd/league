@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Winter Floodlit League — Results</title>
+<style>
+:root{--ink:#1f2937;--blue:#164e63;--line:#cbd5e1;--muted:#64748b;--green:#166534}*{box-sizing:border-box}body{margin:0;padding:24px;background:#e9edf1;color:var(--ink);font:15px/1.45 Arial,Helvetica,sans-serif}main{max-width:1200px;margin:auto;background:#fff;padding:28px;border-radius:10px;box-shadow:0 4px 22px #0001}header{text-align:center;margin-bottom:22px}h1{font-size:23px;margin:0 0 5px}h2{font-size:19px;margin:0 0 12px}.sub,.note{color:var(--muted)}nav{text-align:center;margin-bottom:18px}nav a{display:inline-block;margin:0 5px 6px;padding:9px 14px;border-radius:6px;background:var(--blue);color:white;text-decoration:none;font-weight:700}.toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:12px;align-items:end;padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;margin-bottom:18px}label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;color:#475569;margin-bottom:5px}select,button{font:inherit;border:1px solid var(--line);border-radius:6px;padding:10px;background:white;color:var(--ink)}button{background:var(--blue);color:white;border:0;font-weight:700;cursor:pointer}.status{font-size:13px;color:var(--muted);margin:10px 0 18px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 22px}.card{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:13px}.card strong{display:block;font-size:24px}.card span{font-size:12px;color:var(--muted)}.section{margin:22px 0}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:7px}table{width:100%;border-collapse:collapse;background:white}th,td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{background:#eaf1f5;font-size:12px;text-transform:uppercase}tr:last-child td{border-bottom:0}.num{text-align:center;font-variant-numeric:tabular-nums}.result{font-weight:700}.badge{display:inline-block;padding:3px 8px;border-radius:20px;background:#e2e8f0;font-size:11px;font-weight:700}.badge.complete{background:#dcfce7;color:var(--green)}.badge.partial{background:#fef3c7;color:#92400e}.empty{padding:18px;text-align:center;color:var(--muted)}.note{font-size:12px;margin-top:9px}footer{margin-top:28px;text-align:center;color:var(--muted);font-size:12px}@media(max-width:650px){body{padding:0;background:#fff}main{padding:16px 12px;border-radius:0;box-shadow:none}h1{font-size:19px}.toolbar{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}th,td{padding:8px;font-size:13px}}
+</style></head><body><main>
+<nav aria-label="League pages"><a href="index.html">Score sheet and administration</a><a href="results.html">Results and tables</a></nav>
+<header><h1>STOCK WINTER FLOODLIT LEAGUE</h1><p class="sub">Results posted so far</p></header>
+<section class="toolbar"><div><label for="divisionFilter">Show division</label><select id="divisionFilter"><option value="">All divisions</option></select></div><button id="refreshButton" type="button">Refresh results</button></section>
+<div id="status" class="status" role="status">Loading league results…</div>
+<section class="cards"><div class="card"><strong id="postedCount">—</strong><span>Fixtures with scores posted</span></div><div class="card"><strong id="completeCount">—</strong><span>Fully scored fixtures</span></div><div class="card"><strong id="partialCount">—</strong><span>Partially scored fixtures</span></div></section>
+<section class="section"><h2>Results</h2><div id="resultsTable" class="table-wrap"><div class="empty">Loading…</div></div></section>
+<section class="section"><h2>Division statistics</h2><div id="standingsTable" class="table-wrap"><div class="empty">Loading…</div></div><p class="note">Statistics are calculated from saved set scores. A fixture is marked complete when all eight set scores (four pair matches, two sets each) have been saved. This is a results summary, not an official league-points table; no points or tie-break rules have been assumed.</p></section>
+<footer>Stock Winter Floodlit League</footer></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script>
+const SUPABASE_URL="https://tcdyfnrnghfdrozklptm.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_8gX5ULLS31bC1PuXbGoQjA_99xUB8n1";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const $=id=>document.getElementById(id);let cached=null;
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function dateText(v){const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}/${m[2]}/${m[1]}`:'Date TBC';}
+function setStatus(s,bad=false){$('status').textContent=s;$('status').style.color=bad?'#b91c1c':'#64748b';}
+async function loadResults(){ $('refreshButton').disabled=true;setStatus('Loading saved scores from the league database…');try{
+ const [dr,fr]=await Promise.all([db.from('divisions').select('id,category,name,sort_order').order('sort_order').order('name'),db.from('fixtures').select('id,division_id,match_date,status,home_team_id,away_team_id').order('match_date')]);if(dr.error)throw dr.error;if(fr.error)throw fr.error;
+ const divisions=dr.data||[],fixtures=fr.data||[],teamIds=[...new Set(fixtures.flatMap(f=>[f.home_team_id,f.away_team_id]).filter(Boolean))],fixtureIds=fixtures.map(f=>f.id);let teams=[],pairs=[],sets=[];
+ if(teamIds.length){const r=await db.from('teams').select('id,name,division_id').in('id',teamIds);if(r.error)throw r.error;teams=r.data||[];}
+ if(fixtureIds.length){const r=await db.from('pair_matches').select('id,fixture_id,pair_number').in('fixture_id',fixtureIds);if(r.error)throw r.error;pairs=r.data||[];}
+ const pairIds=pairs.map(p=>p.id);if(pairIds.length){const r=await db.from('match_sets').select('pair_match_id,set_number,home_score,away_score').in('pair_match_id',pairIds);if(r.error)throw r.error;sets=r.data||[];}
+ const teamMap=new Map(teams.map(t=>[t.id,t])),divisionMap=new Map(divisions.map(d=>[d.id,`${d.category} – ${d.name}`])),setsByPair=new Map(),pairsByFixture=new Map();
+ sets.forEach(s=>{if(s.home_score==null||s.away_score==null)return;const a=setsByPair.get(s.pair_match_id)||[];a.push(s);setsByPair.set(s.pair_match_id,a);});pairs.forEach(p=>{const a=pairsByFixture.get(p.fixture_id)||[];a.push(p);pairsByFixture.set(p.fixture_id,a);});
+ const rows=[];fixtures.forEach(f=>{const fp=pairsByFixture.get(f.id)||[];let hs=0,as=0,hw=0,aw=0,count=0;fp.forEach(p=>{let ph=0,pa=0;(setsByPair.get(p.id)||[]).forEach(s=>{count++;const h=Number(s.home_score),a=Number(s.away_score);if(h>a){hs++;ph++;}else if(a>h){as++;pa++;}});if(ph>pa)hw++;else if(pa>ph)aw++;});if(!count)return;rows.push({...f,homeName:teamMap.get(f.home_team_id)?.name||'Home team',awayName:teamMap.get(f.away_team_id)?.name||'Away team',divisionName:divisionMap.get(f.division_id)||'Division',hSets:hs,aSets:as,hPair:hw,aPair:aw,scoredSets:count,complete:count===8&&fp.length===4});});
+ cached={divisions,rows,teams};const sel=$('divisionFilter'),old=sel.value;sel.innerHTML='<option value="">All divisions</option>';divisions.forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=`${d.category} – ${d.name}`;sel.appendChild(o);});if(divisions.some(d=>d.id===old))sel.value=old;render();setStatus(`${rows.length} fixture${rows.length===1?'':'s'} have scores saved. Last refreshed just now.`);
+ }catch(e){setStatus('Could not load results: '+(e.message||String(e)),true);$('resultsTable').innerHTML='<div class="empty">Could not load results. Check that public read access is enabled for the league tables.</div>';$('standingsTable').innerHTML='';}finally{$('refreshButton').disabled=false;}}
+function render(){
+  if(!cached)return;
+  const id=$('divisionFilter').value;
+  const rows=cached.rows.filter(r=>!id||r.division_id===id).sort((a,b)=>(a.match_date||'').localeCompare(b.match_date||''));
+  $('postedCount').textContent=rows.length;
+  $('completeCount').textContent=rows.filter(r=>r.complete).length;
+  $('partialCount').textContent=rows.filter(r=>!r.complete).length;
+  if(!rows.length){
+    $('resultsTable').innerHTML='<div class="empty">No results have been posted for this selection yet.</div>';
+  }else{
+    const body=rows.map(r=>'<tr><td>'+dateText(r.match_date)+'</td><td>'+esc(r.divisionName)+'</td><td>'+esc(r.homeName)+' v '+esc(r.awayName)+'</td><td class="num result">'+r.hPair+'–'+r.aPair+'</td><td class="num">'+r.hSets+'–'+r.aSets+'</td><td><span class="badge '+(r.complete?'complete':'partial')+'">'+(r.complete?'Complete':'Partial')+' ('+r.scoredSets+'/8 sets)</span></td></tr>').join('');
+    $('resultsTable').innerHTML='<table><thead><tr><th>Date</th><th>Division</th><th>Fixture</th><th>Pair matches won</th><th>Sets won</th><th>Posting status</th></tr></thead><tbody>'+body+'</tbody></table>';
+  }
+  const divs=id?cached.divisions.filter(d=>d.id===id):cached.divisions;
+  const parts=[];
+  divs.forEach(d=>{
+    const teamStats=cached.teams.filter(x=>x.division_id===d.id).map(x=>({name:x.name,played:0,partial:0,pw:0,pl:0,sw:0,sl:0}));
+    const byName=new Map(teamStats.map(x=>[x.name,x]));
+    rows.filter(r=>r.division_id===d.id).forEach(r=>{
+      const home=byName.get(r.homeName),away=byName.get(r.awayName);
+      if(!home||!away)return;
+      if(r.complete){home.played++;away.played++;}else{home.partial++;away.partial++;}
+      home.pw+=r.hPair;home.pl+=r.aPair;away.pw+=r.aPair;away.pl+=r.hPair;
+      home.sw+=r.hSets;home.sl+=r.aSets;away.sw+=r.aSets;away.sl+=r.hSets;
+    });
+    teamStats.sort((a,b)=>(b.pw-a.pw)||((b.sw-b.sl)-(a.sw-a.sl))||a.name.localeCompare(b.name));
+    if(teamStats.length){
+      const teamRows=teamStats.map(x=>'<tr><td>'+esc(x.name)+'</td><td class="num">'+x.played+'</td><td class="num">'+x.partial+'</td><td class="num">'+x.pw+'</td><td class="num">'+x.pl+'</td><td class="num">'+x.sw+'</td><td class="num">'+x.sl+'</td><td class="num">'+(x.sw-x.sl)+'</td></tr>').join('');
+      parts.push('<h3>'+esc(d.category)+' – '+esc(d.name)+'</h3><div class="table-wrap" style="margin-bottom:16px"><table><thead><tr><th>Team</th><th>Played</th><th>Partial</th><th>Pair W</th><th>Pair L</th><th>Sets W</th><th>Sets L</th><th>Set diff.</th></tr></thead><tbody>'+teamRows+'</tbody></table></div>');
+    }
+  });
+  $('standingsTable').innerHTML=parts.length?parts.join(''):'<div class="empty">No teams are listed in this division yet.</div>';
+}
+$('divisionFilter').addEventListener('change',render);$('refreshButton').addEventListener('click',loadResults);loadResults();
+</script></body></html>
