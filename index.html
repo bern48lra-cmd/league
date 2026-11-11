@@ -14,6 +14,7 @@
   .season { font-weight:700; color:#475569; }
   .season input { display:inline-block; width:105px; padding:3px 5px; text-align:center; }
   .details { display:grid; grid-template-columns:1fr 1fr; gap:14px 28px; margin:20px 0 22px; }
+  .sheet-fixture-picker { grid-column:1 / -1; }
   label { display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#475569; margin-bottom:5px; }
   input, select, textarea { width:100%; min-width:0; border:1px solid #cbd5e1; border-radius:6px; padding:9px; font:inherit; background:#fff; color:var(--ink); }
   input:focus, select:focus, textarea:focus { outline:2px solid #67a9c5; border-color:#0e7490; }
@@ -193,6 +194,7 @@
     <div class="season">Season <input id="season" value="2026-27" aria-label="Season"></div>
   </header>
   <section class="details">
+    <div class="sheet-fixture-picker"><label for="sheetFixtureSelect">Select fixture for this score sheet</label><select id="sheetFixtureSelect"><option value="">Choose a scheduled fixture</option></select></div>
     <div><label for="division">Division</label><input id="division" value="" placeholder="Selected division" readonly></div>
     <div><label for="matchDate">Date</label><input id="matchDate" type="date"></div>
     <div><label for="homeTeam">Home team</label><input id="homeTeam" placeholder="Home team" readonly></div>
@@ -429,9 +431,10 @@ async function loadDivisions() {
   (data || []).forEach(d => { const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.category} – ${d.name}`; select.appendChild(o); });
   ['teamDivision','fixtureDivision'].forEach(id=>{const target=el(id);target.innerHTML='<option value="">Choose division</option>';(data||[]).forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=`${d.category} – ${d.name}`;target.appendChild(o);});});
   await refreshTeams();
-  setDbStatus(`${data.length} divisions loaded. Choose a division to see its fixtures.`);
+  await populateMainFixtureSelect();
+  setDbStatus(`${data.length} divisions loaded. Choose a fixture in the score sheet or use the division selector above.`);
 }
-el('divisionSelect').addEventListener('change', async () => {
+async function loadDivisionFixtures() {
   const divisionId = el('divisionSelect').value; const fs=el('fixtureSelect'); fs.innerHTML='<option value="">Choose fixture</option>';
   currentFixture=null; el('saveDatabaseButton').disabled=true;
   if (!divisionId) return;
@@ -441,10 +444,39 @@ el('divisionSelect').addEventListener('change', async () => {
   let teams=[];
   if (ids.length) { const result=await db.from('teams').select('id,name').in('id',ids); if(result.error){setDbStatus('Could not load team names: '+result.error.message,true);return;} teams=result.data||[]; }
   const tm=new Map(teams.map(t=>[t.id,t.name]));
-  (fixtures||[]).forEach(f=>{ const o=document.createElement('option'); o.value=f.id; const date=f.match_date?new Date(f.match_date).toLocaleDateString('en-GB'):'Date TBC'; o.textContent=`${date} — ${tm.get(f.home_team_id)||'Home'} v ${tm.get(f.away_team_id)||'Away'}`; fs.appendChild(o); });
+  (fixtures||[]).forEach(f=>{ const o=document.createElement('option'); o.value=f.id; const date=displayDbDate(f.match_date); o.textContent=`${date} — ${tm.get(f.home_team_id)||'Home'} v ${tm.get(f.away_team_id)||'Away'}`; fs.appendChild(o); });
   fs.dataset.fixtures=JSON.stringify((fixtures||[]).map(f=>({...f,home_name:tm.get(f.home_team_id)||'',away_name:tm.get(f.away_team_id)||''})));
   setDbStatus(`${fixtures.length} fixtures found.`);
+}
+el('divisionSelect').addEventListener('change', loadDivisionFixtures);
+async function populateMainFixtureSelect() {
+  const select=el('sheetFixtureSelect');
+  select.innerHTML='<option value="">Choose a scheduled fixture</option>';
+  const {data:fixtures,error}=await db.from('fixtures').select('id,division_id,match_date,status,home_team_id,away_team_id').order('match_date');
+  if(error){setDbStatus('Could not load fixture choices: '+error.message,true);return;}
+  if(!fixtures?.length){const o=document.createElement('option');o.disabled=true;o.textContent='No scheduled fixtures available';select.appendChild(o);return;}
+  const teamIds=[...new Set(fixtures.flatMap(f=>[f.home_team_id,f.away_team_id]))];
+  const divisionIds=[...new Set(fixtures.map(f=>f.division_id))];
+  const [teamResult,divisionResult]=await Promise.all([
+    db.from('teams').select('id,name').in('id',teamIds),
+    db.from('divisions').select('id,category,name').in('id',divisionIds)
+  ]);
+  if(teamResult.error||divisionResult.error){setDbStatus('Could not prepare fixture choices: '+(teamResult.error||divisionResult.error).message,true);return;}
+  const teams=new Map((teamResult.data||[]).map(t=>[t.id,t.name]));
+  const divisions=new Map((divisionResult.data||[]).map(d=>[d.id,`${d.category} – ${d.name}`]));
+  fixtures.forEach(f=>{const o=document.createElement('option');o.value=f.id;o.textContent=`${displayDbDate(f.match_date)} | ${divisions.get(f.division_id)||'Division'} | ${teams.get(f.home_team_id)||'Home'} v ${teams.get(f.away_team_id)||'Away'}`;select.appendChild(o);});
+}
+el('sheetFixtureSelect').addEventListener('change',async()=>{
+  const fixtureId=el('sheetFixtureSelect').value;
+  if(!fixtureId)return;
+  const {data:fixture,error}=await db.from('fixtures').select('division_id').eq('id',fixtureId).single();
+  if(error){setDbStatus('Could not select fixture: '+error.message,true);return;}
+  el('divisionSelect').value=fixture.division_id;
+  await loadDivisionFixtures();
+  el('fixtureSelect').value=fixtureId;
+  el('loadFixtureButton').click();
 });
+
 el('loadFixtureButton').addEventListener('click', async () => {
   const id=el('fixtureSelect').value; if(!id){setDbStatus('Choose a fixture first.',true);return;}
   const fixtures=JSON.parse(el('fixtureSelect').dataset.fixtures||'[]'); currentFixture=fixtures.find(f=>f.id===id);
@@ -452,7 +484,7 @@ el('loadFixtureButton').addEventListener('click', async () => {
   fixtureTeams={home:currentFixture.home_team_id,away:currentFixture.away_team_id};
   el('division').value=el('divisionSelect').selectedOptions[0].textContent;
   el('homeTeam').value=currentFixture.home_name; el('awayTeam').value=currentFixture.away_name;
-  if(currentFixture.match_date) el('matchDate').value=new Date(currentFixture.match_date).toISOString().slice(0,10);
+  if(currentFixture.match_date) el('matchDate').value=normaliseDbDate(currentFixture.match_date);
   document.querySelectorAll('.pair-inputs input,.score-cell input').forEach(i=>i.value='');
   const {data:pairs,error}=await db.from('pair_matches').select('id,pair_number,home_player1_id,home_player2_id,away_player1_id,away_player2_id').eq('fixture_id',id).order('pair_number');
   if(error){setDbStatus('Could not load saved pair matches: '+error.message,true);return;}
@@ -537,11 +569,23 @@ async function refreshPlayers(){const teamId=el('playerTeam').value;if(!teamId){
 el('playerTeam').addEventListener('change',refreshPlayers);
 el('addPlayerButton').addEventListener('click',async()=>{const team_id=el('playerTeam').value,name=el('playerName').value.trim();if(!team_id||!name){adminMsg('playersMessage','Choose a team and enter a player name.',true);return;}let {data:player,error}=await db.from('players').select('id').ilike('name',name).limit(1).maybeSingle();if(error){adminMsg('playersMessage',error.message,true);return;}if(!player){const r=await db.from('players').insert({name}).select('id').single();if(r.error){adminMsg('playersMessage','Could not create player: '+r.error.message,true);return;}player=r.data;}const link=await db.from('team_players').upsert({team_id,player_id:player.id},{onConflict:'team_id,player_id'});if(link.error){adminMsg('playersMessage','Could not assign player: '+link.error.message,true);return;}el('playerName').value='';adminMsg('playersMessage','Player added to team.');await refreshPlayers();});
 el('playersList').addEventListener('click',async e=>{const b=e.target.closest('[data-remove-player]');if(!b)return;if(!confirm('Remove this player from the selected team?'))return;const {error}=await db.from('team_players').delete().eq('team_id',el('playerTeam').value).eq('player_id',b.dataset.removePlayer);if(error){adminMsg('playersMessage',error.message,true);return;}adminMsg('playersMessage','Player removed from team.');await refreshPlayers();});
+function normaliseDbDate(value){
+  if(!value) return '';
+  const raw=String(value).trim();
+  // PostgreSQL date and timestamp values normally begin YYYY-MM-DD.
+  let m=raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m){const y=Number(m[1]),mo=Number(m[2]),d=Number(m[3]);const check=new Date(Date.UTC(y,mo-1,d));return check.getUTCFullYear()===y&&check.getUTCMonth()===mo-1&&check.getUTCDate()===d?`${m[1]}-${m[2]}-${m[3]}`:'';}
+  // Also tolerate dates entered as DD/MM/YYYY.
+  m=raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m){const d=Number(m[1]),mo=Number(m[2]),y=Number(m[3]);const check=new Date(Date.UTC(y,mo-1,d));return check.getUTCFullYear()===y&&check.getUTCMonth()===mo-1&&check.getUTCDate()===d?`${String(y).padStart(4,'0')}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`:'';}
+  return '';
+}
+function displayDbDate(value){const iso=normaliseDbDate(value);if(!iso)return value?'Date unavailable':'TBC';const [y,m,d]=iso.split('-');return `${d}/${m}/${y}`;}
 async function refreshFixtureTeamOptions(){const divisionId=el('fixtureDivision').value;const home=el('fixtureHome'),away=el('fixtureAway');const oldH=home.value,oldA=away.value;home.innerHTML='<option value="">Choose home team</option>';away.innerHTML='<option value="">Choose away team</option>';if(!divisionId)return;const {data,error}=await db.from('teams').select('id,name').eq('division_id',divisionId).order('name');if(error){adminMsg('fixturesMessage','Could not load teams: '+error.message,true);return;}(data||[]).forEach(t=>{for(const sel of [home,away]){const o=document.createElement('option');o.value=t.id;o.textContent=t.name;sel.appendChild(o);}});if((data||[]).some(t=>t.id===oldH))home.value=oldH;if((data||[]).some(t=>t.id===oldA))away.value=oldA;await refreshFixtures();}
 el('fixtureDivision').addEventListener('change',refreshFixtureTeamOptions);
-async function refreshFixtures(){const divisionId=el('fixtureDivision').value;if(!divisionId){el('fixturesList').innerHTML='<p class="note">Choose a division to view its fixtures.</p>';return;}const {data,error}=await db.from('fixtures').select('id,match_date,status,home_team_id,away_team_id').eq('division_id',divisionId).order('match_date');if(error){adminMsg('fixturesMessage','Could not load fixtures: '+error.message,true);return;}const ids=[...new Set((data||[]).flatMap(f=>[f.home_team_id,f.away_team_id]))];let teams=[];if(ids.length){const r=await db.from('teams').select('id,name').in('id',ids);if(r.error){adminMsg('fixturesMessage',r.error.message,true);return;}teams=r.data||[];}const names=new Map(teams.map(t=>[t.id,t.name]));el('fixturesList').innerHTML=renderTable(['Date','Fixture','Status','Action'],(data||[]).map(f=>`<tr><td>${f.match_date?new Date(f.match_date+'T00:00:00').toLocaleDateString('en-GB'):'TBC'}</td><td>${safeText(names.get(f.home_team_id)||'Home')} v ${safeText(names.get(f.away_team_id)||'Away')}</td><td>${safeText(f.status||'scheduled')}</td><td><button type="button" class="secondary" data-delete-fixture="${f.id}">Delete</button></td></tr>`));}
-el('addFixtureButton').addEventListener('click',async()=>{const division_id=el('fixtureDivision').value,home_team_id=el('fixtureHome').value,away_team_id=el('fixtureAway').value,match_date=el('fixtureDate').value;if(!division_id||!home_team_id||!away_team_id){adminMsg('fixturesMessage','Choose a division, home team and away team.',true);return;}if(home_team_id===away_team_id){adminMsg('fixturesMessage','Home and away teams must be different.',true);return;}const {error}=await db.from('fixtures').insert({division_id,home_team_id,away_team_id,match_date:match_date||null,status:'scheduled'});if(error){adminMsg('fixturesMessage','Could not create fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture created.');await refreshFixtures();});
-el('fixturesList').addEventListener('click',async e=>{const b=e.target.closest('[data-delete-fixture]');if(!b)return;if(!confirm('Delete this fixture and its associated score records? If related records prevent deletion, remove them first.'))return;const {error}=await db.from('fixtures').delete().eq('id',b.dataset.deleteFixture);if(error){adminMsg('fixturesMessage','Could not delete fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture deleted.');await refreshFixtures();});
+async function refreshFixtures(){const divisionId=el('fixtureDivision').value;if(!divisionId){el('fixturesList').innerHTML='<p class="note">Choose a division to view its fixtures.</p>';return;}const {data,error}=await db.from('fixtures').select('id,match_date,status,home_team_id,away_team_id').eq('division_id',divisionId).order('match_date');if(error){adminMsg('fixturesMessage','Could not load fixtures: '+error.message,true);return;}const ids=[...new Set((data||[]).flatMap(f=>[f.home_team_id,f.away_team_id]))];let teams=[];if(ids.length){const r=await db.from('teams').select('id,name').in('id',ids);if(r.error){adminMsg('fixturesMessage',r.error.message,true);return;}teams=r.data||[];}const names=new Map(teams.map(t=>[t.id,t.name]));el('fixturesList').innerHTML=renderTable(['Date','Fixture','Status','Action'],(data||[]).map(f=>`<tr><td>${displayDbDate(f.match_date)}</td><td>${safeText(names.get(f.home_team_id)||'Home')} v ${safeText(names.get(f.away_team_id)||'Away')}</td><td>${safeText(f.status||'scheduled')}</td><td><button type="button" class="secondary" data-delete-fixture="${f.id}">Delete</button></td></tr>`));}
+el('addFixtureButton').addEventListener('click',async()=>{const division_id=el('fixtureDivision').value,home_team_id=el('fixtureHome').value,away_team_id=el('fixtureAway').value,match_date=el('fixtureDate').value;if(!division_id||!home_team_id||!away_team_id){adminMsg('fixturesMessage','Choose a division, home team and away team.',true);return;}if(home_team_id===away_team_id){adminMsg('fixturesMessage','Home and away teams must be different.',true);return;}const {error}=await db.from('fixtures').insert({division_id,home_team_id,away_team_id,match_date:match_date||null,status:'scheduled'});if(error){adminMsg('fixturesMessage','Could not create fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture created.');await refreshFixtures();await populateMainFixtureSelect();});
+el('fixturesList').addEventListener('click',async e=>{const b=e.target.closest('[data-delete-fixture]');if(!b)return;if(!confirm('Delete this fixture and its associated score records? If related records prevent deletion, remove them first.'))return;const {error}=await db.from('fixtures').delete().eq('id',b.dataset.deleteFixture);if(error){adminMsg('fixturesMessage','Could not delete fixture: '+error.message,true);return;}adminMsg('fixturesMessage','Fixture deleted.');await refreshFixtures();await populateMainFixtureSelect();});
 // A super admin can grant/revoke admin roles using an existing Auth user UUID.
 async function refreshAdmins(){const {data,error}=await db.from('league_admins').select('user_id,role,created_at').order('created_at');if(error){adminMsg('adminsMessage','Could not load administrators: '+error.message,true);return;}el('adminsList').innerHTML=renderTable(['User UUID','Role','Action'],(data||[]).map(a=>`<tr><td style="word-break:break-all">${safeText(a.user_id)}</td><td>${safeText(a.role)}</td><td><button type="button" class="secondary" data-remove-admin="${a.user_id}">Remove</button></td></tr>`));}
 el('addAdminButton').addEventListener('click',async()=>{const user_id=el('adminUserId').value.trim(),role=el('adminRole').value;if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id)){adminMsg('adminsMessage','Enter a valid Supabase Auth user UUID.',true);return;}const {error}=await db.from('league_admins').upsert({user_id,role},{onConflict:'user_id'});if(error){adminMsg('adminsMessage','Could not add administrator: '+error.message,true);return;}el('adminUserId').value='';adminMsg('adminsMessage','Administrator role saved.');await refreshAdmins();});
