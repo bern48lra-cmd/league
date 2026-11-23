@@ -197,7 +197,7 @@
   </header>
   <section class="details">
     <div class="sheet-fixture-picker"><label for="sheetFixtureSelect">Select fixture for this score sheet</label><select id="sheetFixtureSelect"><option value="">Choose a scheduled fixture</option></select></div>
-    <div><label for="division">Division</label><input id="division" value="" placeholder="Selected division" readonly></div>
+    <div><label for="sheetDivisionSelect">Division</label><select id="sheetDivisionSelect"><option value="">Choose division</option></select></div>
     <div><label for="matchDate">Date</label><input id="matchDate" type="date"></div>
     <div><label for="homeTeam">Home team</label><input id="homeTeam" placeholder="Home team" readonly></div>
     <div><label for="awayTeam">Away team</label><input id="awayTeam" placeholder="Away team" readonly></div>
@@ -431,10 +431,10 @@ async function loadDivisions() {
   if (error) { setDbStatus('Could not load divisions: ' + error.message, true); return; }
   const select = el('divisionSelect'); select.innerHTML = '<option value="">Choose division</option>';
   (data || []).forEach(d => { const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.category} – ${d.name}`; select.appendChild(o); });
-  ['teamDivision','fixtureDivision'].forEach(id=>{const target=el(id);target.innerHTML='<option value="">Choose division</option>';(data||[]).forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=`${d.category} – ${d.name}`;target.appendChild(o);});});
+  ['teamDivision','fixtureDivision','sheetDivisionSelect'].forEach(id=>{const target=el(id);target.innerHTML='<option value="">Choose division</option>';(data||[]).forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=`${d.category} – ${d.name}`;target.appendChild(o);});});
   await refreshTeams();
   await populateMainFixtureSelect();
-  setDbStatus(`${data.length} divisions loaded. Choose a fixture in the score sheet or use the division selector above.`);
+  setDbStatus(`${data.length} divisions loaded. Choose a division and then a fixture on the score sheet.`);
 }
 async function loadDivisionFixtures() {
   const divisionId = el('divisionSelect').value; const fs=el('fixtureSelect'); fs.innerHTML='<option value="">Choose fixture</option>';
@@ -451,10 +451,12 @@ async function loadDivisionFixtures() {
   setDbStatus(`${fixtures.length} fixtures found.`);
 }
 el('divisionSelect').addEventListener('change', loadDivisionFixtures);
-async function populateMainFixtureSelect() {
+async function populateMainFixtureSelect(divisionId='') {
   const select=el('sheetFixtureSelect');
   select.innerHTML='<option value="">Choose a scheduled fixture</option>';
-  const {data:fixtures,error}=await db.from('fixtures').select('id,division_id,match_date,status,home_team_id,away_team_id').order('match_date');
+  let fixtureQuery=db.from('fixtures').select('id,division_id,match_date,status,home_team_id,away_team_id').order('match_date');
+  if(divisionId) fixtureQuery=fixtureQuery.eq('division_id',divisionId);
+  const {data:fixtures,error}=await fixtureQuery;
   if(error){setDbStatus('Could not load fixture choices: '+error.message,true);return;}
   if(!fixtures?.length){const o=document.createElement('option');o.disabled=true;o.textContent='No scheduled fixtures available';select.appendChild(o);return;}
   const teamIds=[...new Set(fixtures.flatMap(f=>[f.home_team_id,f.away_team_id]))];
@@ -468,12 +470,20 @@ async function populateMainFixtureSelect() {
   const divisions=new Map((divisionResult.data||[]).map(d=>[d.id,`${d.category} – ${d.name}`]));
   fixtures.forEach(f=>{const o=document.createElement('option');o.value=f.id;o.textContent=`${displayDbDate(f.match_date)} | ${divisions.get(f.division_id)||'Division'} | ${teams.get(f.home_team_id)||'Home'} v ${teams.get(f.away_team_id)||'Away'}`;select.appendChild(o);});
 }
+el('sheetDivisionSelect').addEventListener('change',async()=>{
+  await populateMainFixtureSelect(el('sheetDivisionSelect').value);
+  el('homeTeam').value=''; el('awayTeam').value=''; el('matchDate').value='';
+  currentFixture=null; fixtureTeams={home:null,away:null};
+  document.querySelectorAll('.pair-inputs select,.pair-inputs input,.score-cell input').forEach(i=>{ if(i.tagName==='SELECT') i.selectedIndex=0; else i.value=''; });
+  el('saveDatabaseButton').disabled=true;
+});
 el('sheetFixtureSelect').addEventListener('change',async()=>{
   const fixtureId=el('sheetFixtureSelect').value;
   if(!fixtureId)return;
   const {data:fixture,error}=await db.from('fixtures').select('division_id').eq('id',fixtureId).single();
   if(error){setDbStatus('Could not select fixture: '+error.message,true);return;}
   el('divisionSelect').value=fixture.division_id;
+  el('sheetDivisionSelect').value=fixture.division_id;
   await loadDivisionFixtures();
   el('fixtureSelect').value=fixtureId;
   el('loadFixtureButton').click();
@@ -484,7 +494,6 @@ el('loadFixtureButton').addEventListener('click', async () => {
   const fixtures=JSON.parse(el('fixtureSelect').dataset.fixtures||'[]'); currentFixture=fixtures.find(f=>f.id===id);
   if(!currentFixture){setDbStatus('Fixture details could not be found.',true);return;}
   fixtureTeams={home:currentFixture.home_team_id,away:currentFixture.away_team_id};
-  el('division').value=el('divisionSelect').selectedOptions[0].textContent;
   el('homeTeam').value=currentFixture.home_name; el('awayTeam').value=currentFixture.away_name;
   if(currentFixture.match_date) el('matchDate').value=normaliseDbDate(currentFixture.match_date);
   document.querySelectorAll('.pair-inputs input,.score-cell input').forEach(i=>i.value='');
